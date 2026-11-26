@@ -67,7 +67,7 @@ whiteboard/
 - [x] draw on the canvas
 - [x] heart stamp tool
 - [x] send strokes to the server
-- [ ] server broadcasts to every other tab
+- [x] server broadcasts to every other tab
 - [ ] colors + brush size
 - [ ] clear button
 - [ ] new tabs see what's already drawn
