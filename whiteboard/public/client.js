@@ -2,6 +2,11 @@ const canvas = document.getElementById('board');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 const ctx = canvas.getContext('2d');
+const myID = makeId();
+
+function makeId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
 
 let drawing = false;
 let lastX = 0;
@@ -14,8 +19,8 @@ window.addEventListener("keydown", (e) => {
     const key = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && key === "z") {
         e.preventDefault();
-        strokes.pop();
-        redraw();
+        if (drawing) return;
+        undoMine();
         return
     }
 
@@ -44,8 +49,8 @@ function heartStampTool(x, y) {
 function endStroke() {
     if (!drawing) return;
     drawing = false;
-    if (currentStroke && currentStroke.points.length > 1) {
-        strokes.push(currentStroke);
+    if (currentStroke && currentStroke.points.length <= 1) {
+        strokes = strokes.filter((s) => s !== currentStroke);
     }
     currentStroke = null;
 }
@@ -66,27 +71,37 @@ function redraw() {
     }
 }
 
+function undoMine() {
+    const stroke = strokes.findLastIndex((s) => s.owner === myID);
+    if (stroke === -1) return;
+    const removedStroke = strokes.splice(stroke, 1)[0];
+    redraw();
+    sendMessage({ type: 'undo', id: removedStroke.id });
+}
+
 //mouse events
 canvas.addEventListener('mousedown', (e) => {
     const x= e.offsetX;
     const y = e.offsetY;
     if (currentTool === 'heartStamp') {
+        const heart = { type: 'heartStamp', id: makeId(), owner: myID, x, y };
+        strokes.push(heart);
         heartStampTool(x, y);
-        sendMessage({ type: 'heartStamp', x: e.offsetX, y: e.offsetY });
-        strokes.push({ type: 'heartStamp', x, y });
+        sendMessage(heart);
         return;
     } else if (currentTool === 'draw') {
         lastX = x;
         lastY = y;
         drawing = true;
-        currentStroke = { type: 'draw', points: [{ x, y }] };
+        currentStroke = { type: 'draw', id: makeId(), owner: myID, points: [{ x, y }] };
+        strokes.push(currentStroke);
     }
 });
 canvas.addEventListener('mousemove', (e) => {
     if (!drawing) return;
 
     drawLine(lastX, lastY, e.offsetX, e.offsetY);
-    sendMessage({ type: 'draw', x0: lastX, y0: lastY, x1: e.offsetX, y1: e.offsetY });
+    sendMessage({ type: 'draw', id: currentStroke.id, owner: myID, x0: lastX, y0: lastY, x1: e.offsetX, y1: e.offsetY });
 
     lastX = e.offsetX;
     lastY = e.offsetY;
@@ -114,10 +129,21 @@ socket.addEventListener('message', (event) => {
 
     switch (msg.type) {
         case 'draw':
+            let stroke = strokes.find((s) => s.id === msg.id);
+            if (!stroke) {
+                stroke = { type: 'draw', id: msg.id, owner: msg.owner, points: [{ x: msg.x0, y: msg.y0 }] };
+                strokes.push(stroke);
+            }
+            stroke.points.push({ x: msg.x1, y: msg.y1 });
             drawLine(msg.x0, msg.y0, msg.x1, msg.y1);
             break;
         case 'heartStamp':
+            strokes.push({type: 'heartStamp', id: msg.id, owner: msg.owner, x: msg.x, y: msg.y});
             heartStampTool(msg.x, msg.y);
+            break;
+        case 'undo':
+            strokes = strokes.filter((s) => s.id !== msg.id);
+            redraw();
             break;
     }
 });
